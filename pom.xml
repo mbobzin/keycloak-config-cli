@@ -60,7 +60,7 @@
         <java.version>1.8</java.version>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <keycloak.version>11.0.0</keycloak.version>
+        <keycloak.version>9.0.3</keycloak.version>
         <jackson.version>2.11.2</jackson.version>
         <failsafe.version>2.4.0</failsafe.version>
         <testcontainers.version>1.14.3</testcontainers.version>
@@ -146,6 +146,12 @@
 		<dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-kubernetes</artifactId>
+            <version>1.1.5.RELEASE</version>
         </dependency>
 
         <dependency>

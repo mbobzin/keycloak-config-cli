@@ -22,8 +22,15 @@ package de.adorsys.keycloak.config;
 
 import de.adorsys.keycloak.config.model.KeycloakImport;
 import de.adorsys.keycloak.config.model.RealmImport;
+import de.adorsys.keycloak.config.operator.ConfigMapController;
+import de.adorsys.keycloak.config.provider.ConfigMapKeycloakImportProvider;
 import de.adorsys.keycloak.config.provider.KeycloakImportProvider;
 import de.adorsys.keycloak.config.service.RealmImportService;
+import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.ConfigMapList;
+import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.informers.SharedIndexInformer;
+import io.fabric8.kubernetes.client.informers.SharedInformerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,18 +47,21 @@ public class KeycloakConfigRunner implements CommandLineRunner, ExitCodeGenerato
     private static final Logger logger = LoggerFactory.getLogger(KeycloakConfigRunner.class);
     private static final long START_TIME = System.currentTimeMillis();
 
-    private final KeycloakImportProvider keycloakImportProvider;
+    private final ConfigMapKeycloakImportProvider configMapKeycloakImportProvider;
     private final RealmImportService realmImportService;
+    private final KubernetesClient kubernetesClient;
 
     private int exitCode = 0;
 
     @Autowired
     public KeycloakConfigRunner(
-            KeycloakImportProvider keycloakImportProvider,
-            RealmImportService realmImportService
+            RealmImportService realmImportService,
+            KubernetesClient kubernetesClient,
+            ConfigMapKeycloakImportProvider configMapKeycloakImportProvider
     ) {
-        this.keycloakImportProvider = keycloakImportProvider;
         this.realmImportService = realmImportService;
+        this.kubernetesClient = kubernetesClient;
+        this.configMapKeycloakImportProvider = configMapKeycloakImportProvider;
     }
 
     @Override
@@ -62,13 +72,25 @@ public class KeycloakConfigRunner implements CommandLineRunner, ExitCodeGenerato
     @Override
     public void run(String... args) {
         try {
-            KeycloakImport keycloakImport = keycloakImportProvider.get();
-
-            Map<String, RealmImport> realmImports = keycloakImport.getRealmImports();
-
-            for (Map.Entry<String, RealmImport> realmImport : realmImports.entrySet()) {
-                realmImportService.doImport(realmImport.getValue());
+            String namespace = this.kubernetesClient.getNamespace();
+            if (namespace == null) {
+                logger.info("No namespace found via config, assuming default.");
+                namespace = "default";
             }
+
+            SharedInformerFactory informerFactory = kubernetesClient.informers();
+            SharedIndexInformer<ConfigMap> configMapSharedIndexInformer =
+                    informerFactory.sharedIndexInformerFor(ConfigMap.class, ConfigMapList.class, 10 * 60 * 1000);
+
+            ConfigMapController configMapController = new ConfigMapController(kubernetesClient,
+                    configMapKeycloakImportProvider,
+                    realmImportService,
+                    configMapSharedIndexInformer, namespace);
+
+            configMapController.create();
+            informerFactory.startAllRegisteredInformers();
+            informerFactory.addSharedInformerEventListener(exception -> logger.error("Exception occurred, but caught", exception));
+            configMapController.run();
         } catch (NullPointerException e) {
             throw e;
         } catch (Exception e) {
